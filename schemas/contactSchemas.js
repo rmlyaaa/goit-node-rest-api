@@ -1,7 +1,5 @@
 import Joi from "joi";
 
-// const Joi = require("joi");
-
 export const addSchema = Joi.object({
   name: Joi.string()
     .min(6)

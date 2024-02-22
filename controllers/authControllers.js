@@ -1,5 +1,9 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import gravatar from "gravatar";
+import fs from "fs/promises";
+import Jimp from "jimp";
+import { resolve } from "path";
 
 import User from "../models/user.js";
 import { HttpError, ctrlWrapper } from "../helpers/index.js";
@@ -15,8 +19,13 @@ const _register = async (req, res) => {
   }
 
   const hashPassword = await bcrypt.hash(password, 10);
+  const avatarURL = gravatar.url(email);
 
-  const newUser = await User.create({ ...req.body, password: hashPassword });
+  const newUser = await User.create({
+    ...req.body,
+    password: hashPassword,
+    avatarURL,
+  });
 
   res.status(201).json({
     user: {
@@ -65,7 +74,32 @@ const _logout = async (req, res) => {
   res.status(204).json();
 };
 
+const _updateAvatar = async (req, res) => {
+  const { filename } = req.file;
+  const { user } = req;
+  const tmpPath = resolve("tmp", filename);
+  const publickPath = resolve("public/avatars", filename);
+
+  if (user) {
+    await Jimp.read(tmpPath).then((avatar) => {
+      return avatar.resize(250, 250).quality(60).write(publickPath);
+    });
+    fs.unlink(tmpPath);
+    const updateUser = await User.findByIdAndUpdate(
+      user._id,
+      {
+        avatarURL: "avatars/" + filename,
+      },
+      { new: true }
+    );
+    res.status(200).json({ avatarUrl: updateUser.avatarURL });
+  } else {
+    throw HttpError(401, "Not authorized");
+  }
+};
+
 export const register = ctrlWrapper(_register);
 export const login = ctrlWrapper(_login);
 export const getCurrent = ctrlWrapper(_getCurrent);
 export const logout = ctrlWrapper(_logout);
+export const updateAvatar = ctrlWrapper(_updateAvatar);

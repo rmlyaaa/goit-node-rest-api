@@ -1,17 +1,13 @@
 import multer from "multer";
-import path from "path";
+import { resolve } from "path";
 
-const tempDir = path.join(__dirname, "../", "temp");
-
-const multerConfig = multer.diskStorage({
-  destination: tempDir,
-  filename: (req, file, cb) => {
-    cb(null, file.originalname);
+const storage = multer.diskStorage({
+  destination: resolve("tmp"),
+  filename: function (req, file, cb) {
+    const { user } = req;
+    cb(null, user.email + "_" + file.originalname);
   },
 });
 
-const upload = multer({
-  storage: multerConfig,
-});
-
+const upload = multer({ storage });
 export default upload;
