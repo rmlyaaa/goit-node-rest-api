@@ -4,11 +4,12 @@ import gravatar from "gravatar";
 import fs from "fs/promises";
 import Jimp from "jimp";
 import { resolve } from "path";
+import { nanoid } from "nanoid";
 
 import User from "../models/user.js";
-import { HttpError, ctrlWrapper } from "../helpers/index.js";
+import { HttpError, ctrlWrapper, sendEmail } from "../helpers/index.js";
 
-const { SECRET_KEY } = process.env;
+const { SECRET_KEY, BASE_URL } = process.env;
 
 const _register = async (req, res) => {
   const { email, password } = req.body;
@@ -18,14 +19,27 @@ const _register = async (req, res) => {
     throw HttpError(409, "Email in use");
   }
 
+  if (user !== null && user.verify) {
+    throw HttpError(409, "Email not verify");
+  }
+
   const hashPassword = await bcrypt.hash(password, 10);
   const avatarURL = gravatar.url(email);
+  const verificationToken = nanoid();
 
   const newUser = await User.create({
     ...req.body,
     password: hashPassword,
     avatarURL,
+    verificationToken,
   });
+
+  const verifyEmail = {
+    to: email,
+    subject: "Verify email",
+    html: `<a target="_blank" href="${BASE_URL}/api/users/verify/${verificationToken} ">Click to verify email</a>`,
+  };
+  await sendEmail(verifyEmail);
 
   res.status(201).json({
     user: {
@@ -33,6 +47,41 @@ const _register = async (req, res) => {
       subscription: newUser.subscription,
     },
   });
+};
+
+const _verifyEmail = async (req, res) => {
+  const { verificationToken } = req.params;
+  const user = await User.findOne({ verificationToken });
+
+  if (!user) {
+    throw HttpError(404, "User not found");
+  }
+
+  await User.findByIdAndUpdate(user._id, {
+    verify: true,
+    verificationToken: "",
+  });
+  res.json({ message: "Verification successful" });
+};
+
+const _resendVerifyEmail = async (req, res) => {
+  const { email } = req.body;
+  const user = await User.findOne({ email });
+  if (!user) {
+    throw HttpError(404, "Email not found");
+  }
+  if (user.verify) {
+    throw HttpError(400, "Verification has already been passed");
+  }
+
+  const verifyEmail = {
+    to: email,
+    subject: "Verify email",
+    html: `<a target="_blank" href="${BASE_URL}/api/users/verify/${user.verificationToken} ">Click to verify email</a>`,
+  };
+  await sendEmail(verifyEmail);
+
+  res.json({ message: "Verification email sent" });
 };
 
 const _login = async (req, res) => {
@@ -99,6 +148,8 @@ const _updateAvatar = async (req, res) => {
 };
 
 export const register = ctrlWrapper(_register);
+export const verifyEmail = ctrlWrapper(_verifyEmail);
+export const resendVerifyEmail = ctrlWrapper(_resendVerifyEmail);
 export const login = ctrlWrapper(_login);
 export const getCurrent = ctrlWrapper(_getCurrent);
 export const logout = ctrlWrapper(_logout);
